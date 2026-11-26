@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: "pages"
@@ -40,7 +41,11 @@ jobs:
 
       - name: Remove link to deleted template sitemap page
         run: |
-          perl -0pi -e 's/\s*<br\s*\/?>\s*Site last updated.*?Sitemap\s*<\/a>//s' _includes/footer.html
+          perl -0pi -e 's{\s*<br\s*/?>\s*Site last updated.*?<a\s+href="/sitemap/".*?</a>}{}s' _includes/footer.html
+          if grep -q '/sitemap/' _includes/footer.html; then
+            echo 'Failed to remove the deleted sitemap footer link.' >&2
+            exit 1
+          fi
 
       - name: Build with Jekyll
         run: bundle exec jekyll build --baseurl "/LJT-Homepage"
@@ -59,3 +64,17 @@ jobs:
           git branch -M gh-pages
           git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git push --force origin gh-pages
+
+      - name: Check and configure GitHub Pages
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          API="https://api.github.com/repos/${{ github.repository }}/pages"
+          echo "Current Pages configuration:"
+          curl -sS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}" || true
+          echo "\nAttempting legacy gh-pages configuration:"
+          curl -sS -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}" \
+            -d '{"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}' || true
+          echo "\nUpdated Pages configuration:"
+          curl -sS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}" || true
